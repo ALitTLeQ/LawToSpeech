@@ -11,11 +11,15 @@ import {
   View,
   ListView,
   Text,
-  Image
+  Image,
+  AsyncStorage
 } from 'react-native';
 
 import { Spinner, Container, Content, Header, Title, List, ListItem, Left, Body, CheckBox, Right, Button, Picker, Icon, Form, Item as FormItem } from 'native-base';
 import Tts from 'react-native-tts';
+
+import Storage from 'react-native-storage';
+
 
 const Item = Picker.Item;
 
@@ -72,9 +76,26 @@ var LawList = [
     text: '公務人員行政中立法',
     file: require('./data/S0110036.json'),
   },
-
-
 ];
+
+var storage = new Storage({
+  // 最大容量，默認值1000條數據循環存儲
+  size: 1000,
+
+  // 存儲引擎：對於RN使用AsyncStorage，對於web使用window.localStorage
+  // 如果不指定則數據只會保存在內存中，重啟後即丟失
+  storageBackend: AsyncStorage,
+
+  // 數據過期時間，默認一整天（1000 * 3600 * 24 毫秒），設為null則永不過期
+  defaultExpires: 1000 * 3600 * 24,
+
+  // 讀寫時在內存中緩存數據。默認啟用。
+  enableCache: true,
+})
+
+global.storage = storage;
+
+var startFrom = 0;
 
 export default class LawToSpeech extends Component {
  constructor(props){
@@ -83,7 +104,8 @@ export default class LawToSpeech extends Component {
     this.state = {
       data: null,
       isSpeaking: false,
-      speed: 0.6,
+      isPause: true,
+      speed: 0.4,
       selectedLaw: 0,
     };
   }
@@ -106,7 +128,19 @@ export default class LawToSpeech extends Component {
     });
     */
     this.loadData(this.state.selectedLaw);
+    Tts.setDefaultLanguage('zh-TW');
+    Tts.setDefaultVoice('cmn-tw-x-sxx#male_1');
+    Tts.setDefaultRate(this.state.speed);
     Tts.setDucking(true);
+    Tts.setDefaultPitch(1.0);
+    Tts.addEventListener('tts-finish', (event) => {
+      //Tts.voices().then(voices => console.log(voices));
+      startFrom+=1
+
+    });
+    Tts.addEventListener('tts-start', (event) => console.log("startFrom", startFrom));
+    
+    //Tts.addEventListener('tts-cancel', (event) => startFrom=0);
     
   }
 
@@ -118,23 +152,105 @@ export default class LawToSpeech extends Component {
     var jsonData = LawList[id].file;
     console.log("name:"+jsonData["法規名稱"]);
     var dataBlob = jsonData["法規內容"];
-    
-    sc = {};
 
-    dataBlob.map(function(rowData) {
-        if(rowData["條號"]){
-           sc[rowData["條號"]] = true;
-        }
-    });
-    
+
+    startFrom = 0;
     
     this.setState({
         name: jsonData["法規名稱"],
         data: new ListView.DataSource({rowHasChanged: (r1,r2) => r1!==r2 }).cloneWithRows(dataBlob),
         dataBlob: dataBlob,
-        selectedCheckboxes: sc
+        //selectedCheckboxes: sc
     });
 
+
+    /*
+    storage.sync = {
+    // sync方法的名字必須和所存數據的key完全相同
+    // 方法接受的參數為一整個object，所有參數從object中解構取出
+    // 這裡可以使用promise。或是使用普通回調函數，但需要調用resolve或reject。
+      user(params){
+        let { id, resolve, reject, syncParams: { extraFetchOptions, someFlag } } = params;
+        fetch('user/', {
+          method: 'GET',
+          body: 'id=' + id,
+          ...extraFetchOptions,
+        }).then(response => {
+          return response.json();
+        }).then(json => {
+          //console.log(json);
+          if(json && json.user){
+            storage.save({
+              key: 'user',
+              id,
+              data: json.user
+            });
+            
+            if (someFlag) {
+              // 根據syncParams中的額外參數做對應處理
+            }
+            
+            // 成功則調用resolve
+            resolve && resolve(json.user);
+          }
+          else{
+            // 失敗則調用reject
+            reject && reject(new Error('data parse error'));
+          }
+        }).catch(err => {
+          console.warn(err);
+          reject && reject(err);
+        });
+      }
+    }
+    */
+    
+  
+
+    sc = {};
+    dataBlob.map(function(rowData) {
+        if(rowData["條號"]){
+          sc[rowData["條號"]] = true;
+          rowData["條文內容"] = rowData["條文內容"].replace(/\s/g, "")
+        }
+    });    
+
+    //this.saveSelectedCheckboxes(sc);
+    this.setState({ selectedCheckboxes: sc });
+    
+    storage.load({
+      key: jsonData["法規名稱"],
+      autoSync: true,
+      syncInBackground: true
+    }).then(ret => {
+      console.log("Loading Storage...");
+      this.setState({ selectedCheckboxes: ret.sc });
+    }).catch(err => {
+      console.warn(err.message);
+      switch (err.name) {
+          case 'NotFoundError':
+              
+
+              break;
+          case 'ExpiredError':
+              // TODO
+              break;
+      }
+    })
+
+
+  }
+
+  saveSelectedCheckboxes(data){
+    let lawName = this.state.name;
+    storage.save({
+      key: lawName, 
+      data: { 
+        sc : data
+      },
+      expires: 1000 * 3600
+    });
+    
   }
 
   toggleCheckbox(label) {
@@ -143,6 +259,8 @@ export default class LawToSpeech extends Component {
     sc[label]=  !sc[label];
 
     this.setState({selectedCheckboxes: sc})
+    this.saveSelectedCheckboxes(sc);
+
   }
 
 
@@ -187,41 +305,39 @@ export default class LawToSpeech extends Component {
   }
 
   speakStart(){
-    if(this.state.isSpeaking){
-      Tts.resume();
-
+    if(!this.state.isSpeaking && this.state.isPause){
+      this.setState({ isSpeaking: true});
+      startFrom = 0;
+      console.log("start"+ startFrom);
+      
     }
-    else{
-      this.setState({ isSpeaking: true });
-      Tts.stop();
-      Tts.setDefaultPitch(0.9);
+      
       sc = this.state.selectedCheckboxes;
+      this.setState({isPause: false}); 
 
-      this.state.dataBlob.map(function(text) {
-          if(text["條號"]){
-            if(sc[text["條號"]])
-            {
-              Tts.speak(text["條號"]);
-              Tts.speak(text["條文內容"].replace(/\s/g, ""));
-              console.log(text["條文內容"].replace(/\s/g, ""));
-            }
-              
+      for(let i = startFrom; i < this.state.dataBlob.length; i++){
+        let text = this.state.dataBlob[i];
+        if(text["條號"]){
+          
+          if(sc[text["條號"]])
+          {
+            Tts.speak(text["條號"]+"。"+text["條文內容"]);
+            //console.log(text["條文內容"]);
           }
-          else{
-            Tts.speak(text["編章節"]);
-          }
-      });
-    }
-    //Tts.speak('中央行政機關組織基準法，第 一 章 總則，第 1 條	為建立中央行政機關組織共同規範，提升施政效能，特制定本法，');
-  }
+        }
+        else{
+          Tts.speak(text["編章節"]);
+        }
+      }
+   }
 
-  speaPause(){
-    Tts.pause();
+  speakPause(){
+    this.setState({ isPause: true });
+    Tts.stop();
   }
-
 
   speakStop(){
-    this.setState({ isSpeaking: false });
+    this.setState({ isSpeaking: false, isPause: true });
     Tts.stop();
   }
 
@@ -253,20 +369,18 @@ export default class LawToSpeech extends Component {
         <Container style={styles.container}>  
 
           <Header style={styles.header}>
-            <Left style={{ flex: 2, flexDirection:'row'}}>
-              {(!this.state.isSpeaking) &&
+            <Left style={{ flex: 1, flexDirection:'row'}}>
+              {(this.state.isPause) &&
                 <Button full transparent onPress={() => this.speakStart()}>
                   <Icon name='play' />
                 </Button>
               }
-              {(this.state.isSpeaking) &&
-                <Button full transparent onPress={() => this.speaPause()}>
+              {(!this.state.isPause) &&
+                <Button full transparent onPress={() => this.speakPause()}>
                   <Icon name='pause' />
                 </Button>
               }
-              <Button full transparent onPress={() => this.speakStop()}>
-                  <Icon name='md-square' />
-              </Button>
+              
             </Left>
             <Picker
               style={styles.picker}
@@ -276,6 +390,9 @@ export default class LawToSpeech extends Component {
               >
               {LawList.map((l, i) => {return <Item value={i} label={LawList[i].text} key={i}/> })}
             </Picker>
+            <Button full transparent onPress={() => this.speakStop()}>
+                  <Icon name='md-square' />
+            </Button>
 
           </Header>
           <Content contentContainerStyle={{ flex: 1 }}>
@@ -297,9 +414,9 @@ export default class LawToSpeech extends Component {
               style ={styles.listView}
               dataSource={this.state.data}
               renderRow={(rowData) => this.renderRow(rowData)}
-              initialListSize={5}
+              initialListSize={10}
             />
-
+            
           </Content>
         </Container>
       );
