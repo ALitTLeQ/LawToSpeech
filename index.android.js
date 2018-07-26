@@ -160,52 +160,8 @@ export default class LawToSpeech extends Component {
         name: jsonData["法規名稱"],
         data: new ListView.DataSource({rowHasChanged: (r1,r2) => r1!==r2 }).cloneWithRows(dataBlob),
         dataBlob: dataBlob,
-        //selectedCheckboxes: sc
     });
-
-
-    /*
-    storage.sync = {
-    // sync方法的名字必須和所存數據的key完全相同
-    // 方法接受的參數為一整個object，所有參數從object中解構取出
-    // 這裡可以使用promise。或是使用普通回調函數，但需要調用resolve或reject。
-      user(params){
-        let { id, resolve, reject, syncParams: { extraFetchOptions, someFlag } } = params;
-        fetch('user/', {
-          method: 'GET',
-          body: 'id=' + id,
-          ...extraFetchOptions,
-        }).then(response => {
-          return response.json();
-        }).then(json => {
-          //console.log(json);
-          if(json && json.user){
-            storage.save({
-              key: 'user',
-              id,
-              data: json.user
-            });
-            
-            if (someFlag) {
-              // 根據syncParams中的額外參數做對應處理
-            }
-            
-            // 成功則調用resolve
-            resolve && resolve(json.user);
-          }
-          else{
-            // 失敗則調用reject
-            reject && reject(new Error('data parse error'));
-          }
-        }).catch(err => {
-          console.warn(err);
-          reject && reject(err);
-        });
-      }
-    }
-    */
     
-  
 
     sc = {};
     dataBlob.map(function(rowData) {
@@ -215,8 +171,9 @@ export default class LawToSpeech extends Component {
         }
     });    
 
-    //this.saveSelectedCheckboxes(sc);
+    
     this.setState({ selectedCheckboxes: sc });
+    
     
     storage.load({
       key: jsonData["法規名稱"],
@@ -226,14 +183,11 @@ export default class LawToSpeech extends Component {
       console.log("Loading Storage...");
       this.setState({ selectedCheckboxes: ret.sc });
     }).catch(err => {
-      console.warn(err.message);
+      //console.warn(err.message);
       switch (err.name) {
           case 'NotFoundError':
-              
-
               break;
           case 'ExpiredError':
-              // TODO
               break;
       }
     })
