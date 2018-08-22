@@ -9,7 +9,7 @@
 	"dependencies": {
 		"native-base": "^2.7.2",
 		"react": "16.0.0-alpha.12",
-		"react-native": "0.47.2",
+		"react-native": "^0.56.0",
 		"react-native-storage": "^0.2.2",
 		"react-native-tts": "^1.5.2"
 	},
